@@ -6,6 +6,7 @@ _Altitude Cruise mode_ is a _relatively_ easy-to-fly manual control mode in whic
 
 When the sticks are released/centered the vehicle will keep the current tilt and heading angle and maintain the current _altitude_.
 If moving in the horizontal plane the vehicle will accelerate until the wind resistance equals the acceleration caused by the set tilt angle.
+The vehicle will then continue to move with a constant velocity (unlike for Altitude mode, in which the vehicle will eventually slow and stop).
 If the wind blows the aircraft will drift in the direction of the wind even if flying perfectly level.
 
 :::tip
