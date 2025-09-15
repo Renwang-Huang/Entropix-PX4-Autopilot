@@ -174,15 +174,15 @@ void Ekf::controlMagFusion(const imuSample &imu_sample)
 		checkMagHeadingConsistency(mag_sample);
 
 		{
-			const bool mag_consistent_or_no_ne_aiding = _control_status.flags.mag_heading_consistent || (!isNorthEastAidingActive()
-					&& !_control_status.flags.vehicle_at_rest);
+			const bool mag_consistent_or_no_ne_aiding = _control_status.flags.mag_heading_consistent || !isNorthEastAidingActive();
 			const bool common_conditions_passing = _control_status.flags.mag
 							       && ((_control_status.flags.yaw_align && mag_consistent_or_no_ne_aiding)
 									       || (!_control_status.flags.ev_yaw && !_control_status.flags.yaw_align))
 							       && !_control_status.flags.mag_fault
 							       && !_control_status.flags.mag_field_disturbed
 							       && !_control_status.flags.ev_yaw
-							       && !_control_status.flags.gnss_yaw;
+							       && !_control_status.flags.gnss_yaw
+							       && (!_control_status.flags.yaw_manual || _control_status.flags.mag_aligned_in_flight);
 
 			_control_status.flags.mag_3D = common_conditions_passing
 						       && (_params.ekf2_mag_type == MagFuseType::AUTO)
@@ -211,7 +211,8 @@ void Ekf::controlMagFusion(const imuSample &imu_sample)
 
 			if (continuing_conditions_passing && _control_status.flags.yaw_align) {
 
-				if ((checkHaglYawResetReq() && (_control_status.flags.mag_hdg || _control_status.flags.mag_3D))
+				if ((checkHaglYawResetReq() && (_control_status.flags.mag_hdg || _control_status.flags.mag_3D
+								|| _control_status.flags.yaw_manual))
 				    || (wmm_updated && no_ne_aiding_or_not_moving)) {
 					ECL_INFO("reset to %s", AID_SRC_NAME);
 					const bool reset_heading = _control_status.flags.mag_hdg || _control_status.flags.mag_3D;
@@ -449,7 +450,7 @@ void Ekf::resetMagStates(const Vector3f &mag, bool reset_heading)
 	}
 
 	// record the start time for the magnetic field alignment
-	if (_control_status.flags.in_air && reset_heading) {
+	if (_control_status.flags.in_air && (reset_heading || _control_status.flags.yaw_manual)) {
 		_control_status.flags.mag_aligned_in_flight = true;
 		_flt_mag_align_start_time = _time_delayed_us;
 	}
