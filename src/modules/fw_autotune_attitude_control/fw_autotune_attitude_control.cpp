@@ -197,7 +197,6 @@ void FwAutotuneAttitudeControl::Run()
 		const Vector<float, 5> &coeff_var = _sys_id.getVariances();
 		Vector3f rate_sp{};
 
-
 		if (_sys_id.areFiltersInitialized()) {
 			if (_state == state::roll_amp_detection || _state == state::pitch_amp_detection || _state == state::yaw_amp_detection) {
 				rate_sp = getAmplitudeDetectionSignal();
@@ -330,7 +329,10 @@ void FwAutotuneAttitudeControl::updateStateMachine(hrt_abstime now)
 			// first step needs to be shorter to keep the drone centered
 			_steps_counter = 5;
 			_max_steps = 10;
+			_signal_sign = 1;
+			_input_scale = 1.f / _param_fw_rr_p.get();
 			_signal_filter.reset(0.f);
+			_gains_backup_available = false;
 		}
 
 		break;
