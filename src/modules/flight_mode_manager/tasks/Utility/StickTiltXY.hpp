@@ -64,8 +64,7 @@ public:
 			const float yaw_setpoint);
 
 	matrix::Vector2f generateAccelerationSetpointsForAltitudeCruise(matrix::Vector2f stick_xy, const float dt,
-			const float yaw,
-			const float yaw_setpoint);
+			const float yaw, const float yaw_setpoint);
 
 	void reset();
 private:

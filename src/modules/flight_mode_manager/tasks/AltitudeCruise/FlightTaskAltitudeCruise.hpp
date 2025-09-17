@@ -2,7 +2,7 @@
 
 #include "FlightTaskManualAltitude.hpp"
 
-class FlightTaskAltitudeCruise : public FlightTaskManualAltitude
+class FlightTaskAltitudeCruise : public FlightTaskManualAltitudeSmoothVel
 {
 public:
 	FlightTaskAltitudeCruise();

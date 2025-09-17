@@ -7,7 +7,7 @@ FlightTaskAltitudeCruise::FlightTaskAltitudeCruise()
 
 void FlightTaskAltitudeCruise::reActivate()
 {
-	FlightTaskManualAltitude::reActivate();
+	FlightTaskManualAltitudeSmoothVel::reActivate();
 	_stick_tilt_xy.reset();
 }
 

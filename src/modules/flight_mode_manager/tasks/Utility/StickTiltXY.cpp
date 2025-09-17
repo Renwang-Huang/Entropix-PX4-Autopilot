@@ -83,7 +83,7 @@ Vector2f StickTiltXY::generateAccelerationSetpointsForAltitudeCruise(Vector2f st
 			_altitude_cruise_acceleration.unit_or_zero() * _maximum_acceleration;
 	}
 
-	auto global_altitude_cruise_acceleration = _altitude_cruise_acceleration;
+	Vector2f global_altitude_cruise_acceleration = _altitude_cruise_acceleration;
 	Sticks::rotateIntoHeadingFrameXY(global_altitude_cruise_acceleration, yaw, yaw_setpoint);
 	return global_altitude_cruise_acceleration;
 }
