@@ -1,36 +1,3 @@
-/****************************************************************************
- *
- *   Copyright (c) 2022 PX4 Development Team. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name PX4 nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- ****************************************************************************/
-
 #include "VehicleOpticalFlow.hpp"
 
 #include <px4_platform_common/log.h>
@@ -43,6 +10,7 @@ using namespace time_literals;
 
 static constexpr uint32_t SENSOR_TIMEOUT{300_ms};
 
+//初始化相关模块
 VehicleOpticalFlow::VehicleOpticalFlow() :
 	ModuleParams(nullptr),
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::nav_and_controllers)
@@ -52,12 +20,14 @@ VehicleOpticalFlow::VehicleOpticalFlow() :
 	_gyro_integrator.set_reset_samples(1);
 }
 
+//停止光流处理任务
 VehicleOpticalFlow::~VehicleOpticalFlow()
 {
 	Stop();
 	perf_free(_cycle_perf);
 }
 
+//触发传感器回调，启动对应的数据处理
 bool VehicleOpticalFlow::Start()
 {
 	_sensor_flow_sub.registerCallback();
@@ -71,21 +41,20 @@ bool VehicleOpticalFlow::Start()
 	return true;
 }
 
+//停止模块，取消订阅与清理状态
 void VehicleOpticalFlow::Stop()
 {
 	Deinit();
 
-	// clear all registered callbacks
 	_sensor_flow_sub.unregisterCallback();
 	_sensor_gyro_sub.unregisterCallback();
 	_sensor_selection_sub.unregisterCallback();
 }
 
+//在运行过程中动态检查参数是否变化，并更新模块内部状态
 void VehicleOpticalFlow::ParametersUpdate()
 {
-	// Check if parameters have changed
 	if (_params_sub.updated()) {
-		// clear update
 		parameter_update_s param_update;
 		_params_sub.copy(&param_update);
 
@@ -104,14 +73,15 @@ void VehicleOpticalFlow::Run()
 	UpdateDistanceSensor();
 
 	if (!_delta_angle_available) {
-		UpdateSensorGyro();
+		UpdateSensorGyro();   //如果光流传感器本身没有提供角速度积分（delta_angle），就使用陀螺仪数据进行补充
 	}
 
+	//存储当前获取的光流原始数据
 	sensor_optical_flow_s sensor_optical_flow;
 
 	if (_sensor_flow_sub.update(&sensor_optical_flow)) {
 
-		// clear data accumulation if there's a gap in data
+		// 如果有数据间隙，或者质量计数异常，调用 ClearAccumulatedData() 重置累积量
 		const uint64_t integration_gap_threshold_us = sensor_optical_flow.integration_timespan_us * 2;
 
 		if ((sensor_optical_flow.timestamp_sample >= _flow_timestamp_sample_last + integration_gap_threshold_us)
@@ -124,14 +94,11 @@ void VehicleOpticalFlow::Run()
 		const hrt_abstime timestamp_oldest = sensor_optical_flow.timestamp_sample - sensor_optical_flow.integration_timespan_us;
 		const hrt_abstime timestamp_newest = sensor_optical_flow.timestamp;
 
-		// delta angle
-		//  - from sensor_optical_flow if available, otherwise use synchronized sensor_gyro if available
+		// （角速度积分）处理
 		if (sensor_optical_flow.delta_angle_available && Vector2f(sensor_optical_flow.delta_angle).isAllFinite()) {
-			// passthrough integrated gyro if available
 			Vector3f delta_angle(sensor_optical_flow.delta_angle);
 
-			if (!PX4_ISFINITE(delta_angle(2))) {
-				// Some sensors only provide X and Y angular rates, rotate them but place back the NAN on the Z axis
+			if (!PX4_ISFINITE(delta_angle(2))) {   //如果传感器只提供XY，Z轴置NAN
 				delta_angle(2) = 0.f;
 				_delta_angle += _flow_rotation * delta_angle;
 				_delta_angle(2) = NAN;
@@ -143,11 +110,11 @@ void VehicleOpticalFlow::Run()
 			_delta_angle_available = true;
 
 		} else {
-			_delta_angle_available = false;
+			_delta_angle_available = false;//如果光流传感器没有提供 delta_angle
 
-			// integrate synchronized gyro
-			gyroSample gyro_sample;
+			gyroSample gyro_sample;//结构体都有在hpp文件中定义
 
+			//这里pop_oldest调用了RingBuffer.hpp里面的方法
 			while (_gyro_buffer.pop_oldest(timestamp_oldest, timestamp_newest, &gyro_sample)) {
 
 				_gyro_integrator.put(gyro_sample.data, gyro_sample.dt);
@@ -155,7 +122,7 @@ void VehicleOpticalFlow::Run()
 				float min_interval_s = (sensor_optical_flow.integration_timespan_us * 1e-6f) * 0.99f;
 
 				if (_gyro_integrator.integral_dt() > min_interval_s) {
-					//PX4_INFO("integral dt: %.6f, min interval: %.6f", (double)_gyro_integrator.integral_dt(),(double) min_interval_s);
+					PX4_INFO("integral dt: %.6f, min interval: %.6f", (double)_gyro_integrator.integral_dt(),(double) min_interval_s);
 					break;
 				}
 			}
@@ -172,8 +139,7 @@ void VehicleOpticalFlow::Run()
 			}
 		}
 
-		// distance
-		//  - from sensor_optical_flow if available, otherwise use downward distance_sensor if available
+		// 高度数据处理
 		if (sensor_optical_flow.distance_available && PX4_ISFINITE(sensor_optical_flow.distance_m)) {
 			if (!PX4_ISFINITE(_distance_sum)) {
 				_distance_sum = sensor_optical_flow.distance_m;
@@ -185,7 +151,6 @@ void VehicleOpticalFlow::Run()
 			}
 
 		} else {
-			// otherwise use buffered downward facing distance_sensor if available
 			rangeSample range_sample;
 
 			if (_range_buffer.peak_first_older_than(sensor_optical_flow.timestamp_sample, &range_sample)) {
@@ -201,12 +166,18 @@ void VehicleOpticalFlow::Run()
 		}
 
 		_flow_timestamp_sample_last = sensor_optical_flow.timestamp_sample;
+
+		//_flow_integral：累积像素位移（光流测量）
 		_flow_integral(0) += sensor_optical_flow.pixel_flow[0];
 		_flow_integral(1) += sensor_optical_flow.pixel_flow[1];
 
+		//_integration_timespan_us：累积积分时间
 		_integration_timespan_us += sensor_optical_flow.integration_timespan_us;
 
+		//_quality_sum：累积光流质量
 		_quality_sum += sensor_optical_flow.quality;
+
+		//_accumulated_count：累积次数
 		_accumulated_count++;
 
 		bool publish = true;
@@ -214,7 +185,7 @@ void VehicleOpticalFlow::Run()
 		if (_param_sens_flow_rate.get() > 0) {
 			const float interval_us = 1e6f / _param_sens_flow_rate.get();
 
-			// don't allow publishing faster than SENS_FLOW_RATE
+			// SENS_FLOW_RATE 参数作用的地方
 			if (_integration_timespan_us < interval_us) {
 				publish = false;
 			}
@@ -343,7 +314,7 @@ void VehicleOpticalFlow::Run()
 		}
 	}
 
-	// reschedule backup
+	// 10ms调度一次
 	ScheduleDelayed(10_ms);
 
 	perf_end(_cycle_perf);
@@ -351,14 +322,14 @@ void VehicleOpticalFlow::Run()
 
 void VehicleOpticalFlow::UpdateDistanceSensor()
 {
-	// update range finder buffer
+	//存储当前读取的距离传感器数据
 	distance_sensor_s distance_sensor;
 
+	//传感器的选择逻辑
 	if ((_distance_sensor_selected < 0) && _distance_sensor_subs.advertised()) {
 		for (unsigned i = 0; i < _distance_sensor_subs.size(); i++) {
 
 			if (_distance_sensor_subs[i].update(&distance_sensor)) {
-				// only use the first instace which has the correct orientation
 				if ((hrt_elapsed_time(&distance_sensor.timestamp) < 100_ms)
 				    && (distance_sensor.orientation == distance_sensor_s::ROTATION_DOWNWARD_FACING)) {
 
@@ -377,17 +348,17 @@ void VehicleOpticalFlow::UpdateDistanceSensor()
 	}
 
 	if (_distance_sensor_selected >= 0 && _distance_sensor_subs[_distance_sensor_selected].update(&distance_sensor)) {
-		// range sample
+		//传感器方向必须要朝下
 		if (distance_sensor.orientation == distance_sensor_s::ROTATION_DOWNWARD_FACING) {
 
 			if ((distance_sensor.current_distance >= distance_sensor.min_distance)
-			    && (distance_sensor.current_distance <= distance_sensor.max_distance)) {
+			    && (distance_sensor.current_distance <= distance_sensor.max_distance)) {   //测量距离必须在有效范围内
 
 				rangeSample sample;
 				sample.time_us = distance_sensor.timestamp;
 				sample.data = distance_sensor.current_distance;
 
-				_range_buffer.push(sample);
+				_range_buffer.push(sample);//将数据封装成 rangeSample 并推入 _range_buffer
 
 				_last_range_sensor_update = distance_sensor.timestamp;
 
@@ -404,26 +375,27 @@ void VehicleOpticalFlow::UpdateDistanceSensor()
 	}
 }
 
+//不处理陀螺仪数据而是获取陀螺仪数据
 void VehicleOpticalFlow::UpdateSensorGyro()
 {
 	if (_sensor_selection_sub.updated()) {
 		sensor_selection_s sensor_selection{};
 		_sensor_selection_sub.copy(&sensor_selection);
 
-		for (uint8_t i = 0; i < MAX_SENSOR_COUNT; i++) {
+		for (uint8_t i = 0; i < MAX_SENSOR_COUNT; i++) {   //最多支持三个光流或距离传感器实例
 			uORB::SubscriptionData<sensor_gyro_s> sensor_gyro_sub{ORB_ID(sensor_gyro), i};
 
-			if (sensor_gyro_sub.advertised()
+			if (sensor_gyro_sub.advertised()   //数据有效的前提条件
 			    && (sensor_gyro_sub.get().timestamp != 0)
 			    && (sensor_gyro_sub.get().device_id != 0)
 			    && (hrt_elapsed_time(&sensor_gyro_sub.get().timestamp) < 1_s)) {
 
-				if (sensor_gyro_sub.get().device_id == sensor_selection.gyro_device_id) {
+				if (sensor_gyro_sub.get().device_id == sensor_selection.gyro_device_id) {   //检查是否是用户指定的设备
 					if (_sensor_gyro_sub.ChangeInstance(i) && _sensor_gyro_sub.registerCallback()) {
 
 						_gyro_calibration.set_device_id(sensor_gyro_sub.get().device_id);
 						PX4_DEBUG("selecting sensor_gyro:%" PRIu8 " %" PRIu32, i, sensor_gyro_sub.get().device_id);
-						break;
+						break;   //检测到有效的陀螺仪之后就停止搜索
 
 					} else {
 						PX4_ERR("unable to register callback for sensor_gyro:%" PRIu8 " %" PRIu32, i, sensor_gyro_sub.get().device_id);
@@ -433,10 +405,10 @@ void VehicleOpticalFlow::UpdateSensorGyro()
 		}
 	}
 
-	// buffer
-	bool sensor_gyro_lost_printed = false;
+	bool sensor_gyro_lost_printed = false;   //打印陀螺仪数据不连续错误的标志位
 	int gyro_updates = 0;
 
+	//读取并缓存陀螺仪数据
 	while (_sensor_gyro_sub.updated() && (gyro_updates < sensor_gyro_s::ORB_QUEUE_LENGTH)) {
 		gyro_updates++;
 		const unsigned last_generation = _sensor_gyro_sub.get_last_generation();
@@ -451,37 +423,40 @@ void VehicleOpticalFlow::UpdateSensorGyro()
 				}
 			}
 
+			//应用陀螺仪校准
 			_gyro_calibration.set_device_id(sensor_gyro.device_id);
 			_gyro_calibration.SensorCorrectionsUpdate();
 
+			//计算两次陀螺仪样本时间差
 			const float dt_s = (sensor_gyro.timestamp_sample - _gyro_timestamp_sample_last) * 1e-6f;
 			_gyro_timestamp_sample_last = sensor_gyro.timestamp_sample;
 
+                        //创建缓冲数据并压入RingBuffer
 			gyroSample gyro_sample;
 			gyro_sample.time_us = sensor_gyro.timestamp_sample;
 			gyro_sample.data = _gyro_calibration.Correct(Vector3f{sensor_gyro.x, sensor_gyro.y, sensor_gyro.z});
 			gyro_sample.dt = dt_s;
 
-			_gyro_buffer.push(gyro_sample);
+			_gyro_buffer.push(gyro_sample);//压入环形缓冲区，供光流融合使用
 		}
 	}
 }
 
+//清空光流模块中累计的测量数据，为下一次积分或新一轮测量做准备
 void VehicleOpticalFlow::ClearAccumulatedData()
 {
-	// clear accumulated data
-	_flow_integral.zero();
-	_integration_timespan_us = 0;
+	_flow_integral.zero();//累计光流位移，存储光流在x和y方向的像素位移积分值
+	_integration_timespan_us = 0;//累计光流积分的时间跨度（微秒）
 
-	_delta_angle.zero();
+	_delta_angle.zero();//累积陀螺仪角增量（roll, pitch, yaw）
 
-	_distance_sum = NAN;
-	_distance_sum_count = 0;
+	_distance_sum = NAN;//累计的距离传感器测量总和
+	_distance_sum_count = 0;//累计有效测量的次数
 
-	_quality_sum = 0;
-	_accumulated_count = 0;
+	_quality_sum = 0;//光流质量值累积（例如亮度纹理可靠性、像素匹配质量）
+	_accumulated_count = 0;//累计的光流样本数量
 
-	_gyro_integrator.reset();
+	_gyro_integrator.reset();//陀螺仪积分器对象，用于累积角速度得到角增量
 }
 
 void VehicleOpticalFlow::PrintStatus()
@@ -489,4 +464,4 @@ void VehicleOpticalFlow::PrintStatus()
 
 }
 
-}; // namespace sensors
+};

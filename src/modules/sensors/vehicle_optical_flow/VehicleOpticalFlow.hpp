@@ -1,36 +1,3 @@
-/****************************************************************************
- *
- *   Copyright (c) 2022 PX4 Development Team. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name PX4 nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- ****************************************************************************/
-
 #pragma once
 
 #include "data_validator/DataValidatorGroup.hpp"
@@ -75,7 +42,7 @@ public:
 
 protected:
 	void UpdateDistanceSensor();
-	int _distance_sensor_selected{-1}; // because we can have several distance sensor instances with different orientations
+	int _distance_sensor_selected{-1}; //记录当前选择的距离传感器实例编号（因为可能有多个距离传感器）
 
 private:
 	void ClearAccumulatedData();
@@ -84,22 +51,22 @@ private:
 	void Run() override;
 
 	void ParametersUpdate();
-	void SensorCorrectionsUpdate(bool force = false);
+	void SensorCorrectionsUpdate(bool force = false);//更新传感器标定/修正
 
-	static constexpr int MAX_SENSOR_COUNT = 3;
+	static constexpr int MAX_SENSOR_COUNT = 3;//最多支持三个光流或距离传感器实例
 
-	uORB::Publication<vehicle_optical_flow_s> _vehicle_optical_flow_pub{ORB_ID(vehicle_optical_flow)};
-	uORB::Publication<vehicle_optical_flow_vel_s> _vehicle_optical_flow_vel_pub{ORB_ID(vehicle_optical_flow_vel)};
+	uORB::Publication<vehicle_optical_flow_s> _vehicle_optical_flow_pub{ORB_ID(vehicle_optical_flow)};//发布完整光流数据，光流“全貌”，包含位移、时间、质量等完整信息
+	uORB::Publication<vehicle_optical_flow_vel_s> _vehicle_optical_flow_vel_pub{ORB_ID(vehicle_optical_flow_vel)};//发布光流速度信息，光流“提炼版”，只提供平面速度
 
 	uORB::Subscription _params_sub{ORB_ID(parameter_update)};
 
-	uORB::SubscriptionMultiArray<distance_sensor_s> _distance_sensor_subs{ORB_ID::distance_sensor};
+	uORB::SubscriptionMultiArray<distance_sensor_s> _distance_sensor_subs{ORB_ID::distance_sensor};//订阅多路距离传感器的数据（不论ID多少都进行订阅）
 
-	uORB::Subscription _vehicle_attitude_sub{ORB_ID(vehicle_attitude)};
+	uORB::Subscription _vehicle_attitude_sub{ORB_ID(vehicle_attitude)};//飞机姿态信息
 
-	uORB::SubscriptionCallbackWorkItem _sensor_flow_sub{this, ORB_ID(sensor_optical_flow)};
-	uORB::SubscriptionCallbackWorkItem _sensor_gyro_sub{this, ORB_ID(sensor_gyro)};
-	uORB::SubscriptionCallbackWorkItem _sensor_selection_sub{this, ORB_ID(sensor_selection)};
+	uORB::SubscriptionCallbackWorkItem _sensor_flow_sub{this, ORB_ID(sensor_optical_flow)};//光流原始数据
+	uORB::SubscriptionCallbackWorkItem _sensor_gyro_sub{this, ORB_ID(sensor_gyro)};//陀螺仪数据
+	uORB::SubscriptionCallbackWorkItem _sensor_selection_sub{this, ORB_ID(sensor_selection)};//选择指定ID的传感器数据
 
 	sensors::IntegratorConing _gyro_integrator{};
 
@@ -124,6 +91,7 @@ private:
 
 	bool _delta_angle_available{false};
 
+	//gyroSample结构体定义
 	struct gyroSample {
 		uint64_t time_us{}; ///< timestamp of the measurement (uSec)
 		matrix::Vector3f data{};
@@ -135,16 +103,23 @@ private:
 		float data{};
 	};
 
-	RingBuffer<gyroSample, 32> _gyro_buffer{};
-	RingBuffer<rangeSample, 5> _range_buffer{};
+	RingBuffer<gyroSample, 32> _gyro_buffer{};//_gyro_buffer.push(gyro_sample);//压入环形缓冲区，供光流融合使用
+	RingBuffer<rangeSample, 5> _range_buffer{};//_range_buffer.push(sample);//将数据封装成 rangeSample 并推入 _range_buffer
 
+	//PX4参数系统，用于在地面站设置光流模块参数
 	DEFINE_PARAMETERS(
 		(ParamInt<px4::params::SENS_FLOW_ROT>) _param_sens_flow_rot,
+		//以45°为步进，顺时针旋转，定义光流模块的安装方位（机体坐标系定义为X前Y右Z下，默认0°表示光流模块朝前，和机体朝向一致）
 		(ParamFloat<px4::params::SENS_FLOW_MINHGT>) _param_sens_flow_minhgt,
+		//定义了光流传感器在依赖光流进行定位时的最小有效高度（参数范围：0.0 ~ 1.0 m，步进0.1m，默认值0.08m，表示默认光流在低于8cm的时候不可靠）
 		(ParamFloat<px4::params::SENS_FLOW_MAXHGT>) _param_sens_flow_maxhgt,
+		//这是光流可靠工作的最大高度（默认值是100m，超过这个高度，光流传感器仍然可能有数据，但精度会快速下降）
 		(ParamFloat<px4::params::SENS_FLOW_MAXR>) _param_sens_flow_maxr,
+		//光流传感器能可靠测量的最大角速度，单位是rad/s，光流传感器在速度过大时，输出的数据已经不再准确，SENS_FLOW_MAXR参数设置安全范围，超过就丢弃光流数据，避免误导状态估计
 		(ParamFloat<px4::params::SENS_FLOW_RATE>) _param_sens_flow_rate,
+		//光流数据的最大发布频率（单位 Hz），如果传感器刷新是100HZ但是这个参数设置为70HZ，那么系统中该消息仍然是70HZ的刷新率，如果传感器刷新是70HZ但是这个参数设置为100HZ，那么系统中该消息仍然是70HZ刷新率
 		(ParamFloat<px4::params::SENS_FLOW_SCALE>) _param_sens_flow_scale
+		//对光流测量值进行线性放大或缩小，光流传感器测得的位移或速度量值会乘以这个参数再发布给系统，如果光流测得水平速度为0.2 m/s，SENS_FLOW_SCALE=1.2 → 系统看到的是0.24m/s，用于修正光流传感器的标定偏差，可以微调飞控系统对光流的响应灵敏度
 	)
 };
-}; // namespace sensors
+};
