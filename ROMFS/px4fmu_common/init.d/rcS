@@ -16,9 +16,7 @@ set +e
 #------------------------------------------------------------------------------
 
 #
-# Set default paramter values.
-# Do not add intra word spaces
-# it wastes flash
+# 设置默认参数，不要在参数中间加多余的空格否则可能会占用额外的闪存空间
 #
 set R /
 set FCONFIG /fs/microsd/etc/config.txt
@@ -48,7 +46,7 @@ set PARAM_DEFAULTS_VER 1
 ver all
 
 #
-# Try to mount the microSD card.
+# 挂载microSD卡
 #
 if [ -b "/dev/mmcsd0" ]
 then
