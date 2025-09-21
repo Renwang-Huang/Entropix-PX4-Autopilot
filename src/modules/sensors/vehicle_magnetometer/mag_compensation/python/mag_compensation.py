@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+# 飞行器的电机和电调在运行时会产生电磁干扰（EMI），影响磁力计测量
+# 这个脚本通过日志数据（ULog）分析电机工作信号与磁力计测量值之间的线性关系，生成补偿系数，使磁力计读数更准确
+# 生成的系数会以 param set CAL_MAG*_XCOMP/YCOMP/ZCOMP 格式打印，可直接设置有关参数
+
 """
-File: mag_compensation.py
-Author: Tanja Baumann
-Email: tanja@auterion.com
-Github: https://github.com/baumanta
 Description:
     Computes linear coefficients for mag compensation from thrust and current
 Usage:
@@ -15,7 +15,6 @@ Remark:
     If your logfile does not contain some of the topics, e.g.battery_status/current_a
     you will have to comment out the corresponding parts in the script
 """
-
 
 import matplotlib.pylab as plt
 from mpl_toolkits.mplot3d import Axes3D

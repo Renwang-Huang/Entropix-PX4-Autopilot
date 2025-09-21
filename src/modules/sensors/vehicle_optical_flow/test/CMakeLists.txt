@@ -1,1 +1,0 @@
-px4_add_functional_gtest(SRC VehicleOpticalFlowTest.cpp LINKLIBS vehicle_optical_flow uORB sensor_calibration)

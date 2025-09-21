@@ -12,32 +12,25 @@ menuconfig USER_SENSORS
 		Put sensors in userspace memory
 
 if MODULES_SENSORS
-    config SENSORS_VEHICLE_AIRSPEED
-        bool "Include vehicle airspeed"
-        default y
 
-    config SENSORS_VEHICLE_AIR_DATA
-        bool "Include vehicle air data"
-        default y
-
+    # 支持陀螺仪传感器
     config SENSORS_VEHICLE_ANGULAR_VELOCITY
         bool "Include vehicle angular velocity"
         default y
 
+    # 支持加速度计传感器
     config SENSORS_VEHICLE_ACCELERATION
         bool "Include vehicle acceleration"
         default y
 
-    config SENSORS_VEHICLE_GPS_POSITION
-        bool "Include vehicle gps position"
-        default y
-
+    # 支持磁力计传感器
     config SENSORS_VEHICLE_MAGNETOMETER
         bool "Include vehicle magnetometer"
         default y
 
+    # 支持光流传感器
     config SENSORS_VEHICLE_OPTICAL_FLOW
         bool "Include vehicle optical flow"
         default y
 
-endif #MODULES_SENSORS
+endif
